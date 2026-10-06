@@ -36,6 +36,23 @@
         <div class="cards" id="overviewCards"></div>
         <div class="panel">
           <div class="panel-head">
+            <h2>在办批次超限风险外推</h2>
+            <span class="panel-hint" id="riskNote"></span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>批次号</th><th>品名</th><th>冷库</th><th>风险等级</th>
+                  <th>单次临界时刻</th><th>累计临界时刻</th><th>还能撑多久</th><th>依据</th>
+                </tr>
+              </thead>
+              <tbody id="riskRows"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
             <h2>分库一览</h2>
             <span class="panel-hint">点一行跳到冷库标签并展开</span>
           </div>

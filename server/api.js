@@ -111,6 +111,7 @@ router.get('/records', withData((data, req) => res.listRecords(data, req.query))
 router.post('/records', withData((data, req) => ({ __save: true, __body: res.createRecord(data, req.body || {}) })));
 router.delete('/records/:id', withData((data, req) => ({ __save: true, __body: res.removeRecord(data, req.params.id) })));
 
+router.get('/risk-forecast', withData((data) => coldlib.riskBoard(data)));
 router.get('/releases', withData((data, req) => res.listReleases(data, req.query)));
 
 router.use((req, r, next) => next(new AppError(404, 'NOT_FOUND', '这个地址没有对应功能：' + req.method + ' ' + req.originalUrl)));

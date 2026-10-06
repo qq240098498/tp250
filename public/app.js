@@ -13,6 +13,7 @@ const SOURCE_LIST = ['自动', '人工'];
 const state = {
   view: 'overview',
   summary: null,
+  riskForecast: null,
   settings: null,
   rooms: [],
   probes: [],
@@ -190,10 +191,63 @@ async function loadView(view) {
 /* ---------- 概览 ---------- */
 
 async function loadOverview() {
-  const s = await api('GET', '/api/summary');
-  state.summary = s;
-  $('todayText').textContent = s.today;
+  const results = await Promise.all([
+    api('GET', '/api/summary'),
+    api('GET', '/api/risk-forecast')
+  ]);
+  state.summary = results[0];
+  state.riskForecast = results[1];
+  $('todayText').textContent = results[0].today;
   renderOverview();
+  renderRiskForecast();
+}
+
+/* 还能撑多久：只格式化接口给的分钟数，不自行推算 */
+function fmtRemain(min) {
+  if (min == null) return '按当前走势暂无风险';
+  if (min <= 0) return '已经到限';
+  if (min < 60) return '约 ' + Math.round(min) + ' 分钟';
+  if (min < 1440) return '约 ' + (Math.round(min / 6) / 10) + ' 小时';
+  return '约 ' + (Math.round(min / 144) / 10) + ' 天';
+}
+
+function riskPill(level) {
+  if (level === '已破限' || level === '紧急') return pill(level, 'pill-bad');
+  if (level === '高' || level === '中') return pill(level, 'pill-warn');
+  if (level === '平稳') return pill(level, 'pill-ok');
+  return pill(level, 'pill-mute');
+}
+
+function renderRiskForecast() {
+  const rf = state.riskForecast;
+  const tbody = $('riskRows');
+  if (!rf) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">正在读取风险外推…</td></tr>';
+    return;
+  }
+  $('riskNote').textContent = '门槛：单次 ' + num(rf.settings.allowExcursionMinutes) + ' 分钟、累计 ' + num(rf.settings.allowTotalExcursionMinutes) +
+    ' 分钟；以每批最后一条记录为基准外推，生成于 ' + rf.generatedAt + '；点一行跳到批次标签并展开';
+  const items = rf.items || [];
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">没有在办批次</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map(function (it) {
+    const singleAt = it.single && it.single.breachAt ? String(it.single.breachAt).slice(5, 16) : '—';
+    const totalAt = it.total && it.total.breachAt ? String(it.total.breachAt).slice(5, 16) : '—';
+    const remain = num(it.recordCount) === 0 ? '无法外推' : fmtRemain(it.minutesToBreach);
+    const basis = (it.basis || []).map(function (b) { return esc(b); }).join('<br>');
+    return '<tr class="row-main" data-action="goto-batch" data-id="' + esc(it.batchId) + '">' +
+      '<td>' + esc(it.code) + '</td>' +
+      '<td>' + esc(it.product) + '</td>' +
+      '<td>' + esc(it.roomCode) + '</td>' +
+      '<td>' + riskPill(it.riskLevel) + '</td>' +
+      '<td>' + esc(singleAt) + '</td>' +
+      '<td>' + esc(totalAt) + '</td>' +
+      '<td>' + esc(remain) + '</td>' +
+      '<td class="cell-wrap">' + basis + '</td>' +
+      '</tr>';
+  }).join('');
 }
 
 function statusSummaryText(sc) {
@@ -795,12 +849,7 @@ async function loadBase() {
 
 async function refreshAfterMutation() {
   try { await loadBase(); } catch (err) { showError(err); }
-  try {
-    const s = await api('GET', '/api/summary');
-    state.summary = s;
-    $('todayText').textContent = s.today;
-    renderOverview();
-  } catch (err) { showError(err); }
+  try { await loadOverview(); } catch (err) { showError(err); }
   const exRooms = Array.from(state.expandedRooms);
   const exBatches = Array.from(state.expandedBatches);
   state.roomDetail = {};
@@ -843,6 +892,14 @@ async function handleAction(action, el) {
       const id = el.dataset.roomId || el.dataset.id;
       await switchView('rooms');
       await expandRoom(id);
+      return;
+    }
+    if (action === 'goto-batch') {
+      const id = el.dataset.id;
+      await switchView('batches');
+      await expandBatch(id);
+      const row = document.querySelector('tr.row-main[data-rowkind="batch"][data-id="' + id + '"]');
+      if (row && row.scrollIntoView) row.scrollIntoView({ block: 'center' });
       return;
     }
     if (action === 'room-add') { openRoomForm(null); return; }
