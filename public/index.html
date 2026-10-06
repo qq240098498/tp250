@@ -24,6 +24,7 @@
     <button type="button" class="tab is-active" data-view="overview">概览</button>
     <button type="button" class="tab" data-view="rooms">冷库与探头</button>
     <button type="button" class="tab" data-view="batches">批次</button>
+    <button type="button" class="tab" data-view="risk">超限风险</button>
     <button type="button" class="tab" data-view="records">温度记录</button>
     <button type="button" class="tab" data-view="releases">放行台账</button>
   </nav>
@@ -108,6 +109,27 @@
                 </tr>
               </thead>
               <tbody id="batchRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="view" data-view="risk" id="view-risk">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>在办批次超限风险</h2>
+            <span class="panel-hint" id="riskNote"></span>
+          </div>
+          <div class="risk-chips" id="riskChips"></div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>等级</th><th>批次</th><th>品名</th><th>冷库</th><th>数据截止</th>
+                  <th>还能撑多久</th><th>单次超限临界</th><th>累计超限临界</th><th>依据</th>
+                </tr>
+              </thead>
+              <tbody id="riskRows"></tbody>
             </table>
           </div>
         </div>

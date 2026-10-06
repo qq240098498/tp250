@@ -29,6 +29,7 @@ const state = {
   filters: {
     rooms: { status: '', type: '', keyword: '', probeStatus: '', probeCal: 'all' },
     batches: { status: '', roomId: '', product: '', noRecord: false },
+    risk: { level: '' },
     records: { batchId: '', probeId: '', source: '', from: '', to: '' },
     releases: { decision: '' }
   }
@@ -182,6 +183,7 @@ async function loadView(view) {
     if (view === 'overview') await loadOverview();
     else if (view === 'rooms') await loadRoomsView();
     else if (view === 'batches') await loadBatchesView();
+    else if (view === 'risk') await loadRiskView();
     else if (view === 'records') await loadRecordsView();
     else if (view === 'releases') await loadReleasesView();
   } catch (err) { showError(err); }
@@ -192,6 +194,11 @@ async function loadView(view) {
 async function loadOverview() {
   const s = await api('GET', '/api/summary');
   state.summary = s;
+  try {
+    state.riskSummary = await api('GET', '/api/forecast');
+  } catch (err) {
+    state.riskSummary = null;
+  }
   $('todayText').textContent = s.today;
   renderOverview();
 }
@@ -216,6 +223,16 @@ function renderOverview() {
     { title: '没有温度记录', value: s.noRecordBatches, sub: '个批次', go: { view: 'batches', noRecord: true } },
     { title: 'MKT', value: s.maxMkt, sub: '平均 ' + s.averageMkt, go: { view: 'batches' } }
   ];
+  const rk = state.riskSummary;
+  if (rk) {
+    const rc = rk.levelCounts || {};
+    cards.push({
+      title: '超限风险',
+      value: num(rc['已超']) + num(rc['紧急']),
+      sub: '已超 ' + num(rc['已超']) + ' · 预警 ' + num(rc['预警']) + ' · 关注 ' + num(rc['关注']),
+      go: { view: 'risk' }
+    });
+  }
   $('overviewCards').innerHTML = cards.map(function (c) {
     return '<div class="card" data-action="card-go" data-go=\'' + JSON.stringify(c.go) + '\'>' +
       '<div class="card-title">' + esc(c.title) + '</div>' +
@@ -511,6 +528,64 @@ async function expandBatch(id) {
   renderBatchRows();
 }
 
+/* ---------- 超限风险 ---------- */
+
+function riskLevelPill(level) {
+  if (level === '已超' || level === '紧急') return pill(level, 'pill-bad');
+  if (level === '预警' || level === '关注') return pill(level, 'pill-warn');
+  if (level === '平稳') return pill(level, 'pill-ok');
+  return pill(level, 'pill-mute');
+}
+
+function riskRowClass(level) {
+  if (level === '已超' || level === '紧急') return ' row-danger';
+  if (level === '预警') return ' row-warn';
+  return '';
+}
+
+async function loadRiskView() {
+  const data = await api('GET', '/api/forecast');
+  state.risk = data;
+  $('riskNote').textContent = '数据截止为各批次最后一条温度记录；按当前进度与最近走势外推，口径见 README。生成于 ' + data.generatedAt;
+  renderRiskRows();
+}
+
+function renderRiskRows() {
+  const data = state.risk;
+  const tbody = $('riskRows');
+  if (!data) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">正在读取风险外推…</td></tr>';
+    return;
+  }
+  const counts = data.levelCounts || {};
+  $('riskChips').innerHTML = (data.levelOrder || []).map(function (lv) {
+    return riskLevelPill(lv) + '<span class="chip-count">' + num(counts[lv]) + '</span>';
+  }).join('');
+  const f = state.filters.risk;
+  const rows = (data.items || []).filter(function (it) { return !f.level || it.level === f.level; });
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">没有符合条件的在办批次</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(function (it) {
+    const basis = (it.basis || []).map(function (line) { return '<div>' + esc(line) + '</div>'; }).join('');
+    const proj = function (p) {
+      return '<div>' + esc(p.display || '—') + '</div><div class="cell-note">' + esc(p.note || '') + '</div>';
+    };
+    return '<tr class="row-main' + riskRowClass(it.level) + '" data-rowkind="risk" data-id="' + esc(it.batchId) + '">' +
+      '<td>' + riskLevelPill(it.level) + '</td>' +
+      '<td>' + esc(it.code) + '</td>' +
+      '<td>' + esc(it.product) + '</td>' +
+      '<td>' + esc(it.roomCode) + '</td>' +
+      '<td>' + esc(it.asOf) + '</td>' +
+      '<td>' + esc(it.headline) + '</td>' +
+      '<td class="cell-wrap">' + proj(it.single || {}) + '</td>' +
+      '<td class="cell-wrap">' + proj(it.total || {}) + '</td>' +
+      '<td class="cell-wrap cell-basis">' + basis + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
 /* ---------- 温度记录 ---------- */
 
 async function loadRecordsView() {
@@ -625,6 +700,12 @@ function renderFilters() {
       '<div class="filter-field"><label>所在冷库</label>' + selectHtml('roomId', roomSel, f.roomId) + '</div>' +
       '<div class="filter-field"><label>品名</label>' + textHtml('product', f.product, '品名关键字') + '</div>' +
       '<div class="filter-field"><label>只看无记录</label><input type="checkbox" data-filter="noRecord"' + (f.noRecord ? ' checked' : '') + '></div>';
+  } else if (v === 'risk') {
+    const f = state.filters.risk;
+    const levels = (state.risk && state.risk.levelOrder) || ['已超', '紧急', '预警', '关注', '平稳', '无数据'];
+    html = '<h3>风险筛选</h3>' +
+      '<div class="filter-field"><label>等级</label>' + selectHtml('level', [{ value: '', label: '全部' }].concat(levels.map(function (s) { return { value: s, label: s }; })), f.level) + '</div>' +
+      '<div class="filter-hint">等级按最早临界时刻划分：已超（已经超线）、紧急（4 小时内）、预警（24 小时内）、关注（72 小时内或段长贴线）、平稳、无数据。点一行跳到批次标签并展开该批次。</div>';
   } else if (v === 'records') {
     const f = state.filters.records;
     const batchSel = [{ value: '', label: '全部' }].concat(state.batches.map(function (b) { return { value: b.id, label: b.code }; }));
@@ -912,6 +993,11 @@ async function toggleExpand(kind, id) {
     if (kind === 'batch') {
       if (state.expandedBatches.has(id)) { state.expandedBatches.delete(id); renderBatchRows(); }
       else await expandBatch(id);
+      return;
+    }
+    if (kind === 'risk') {
+      await switchView('batches');
+      await expandBatch(id);
     }
   } catch (err) { showError(err); }
 }

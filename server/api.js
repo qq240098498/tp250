@@ -105,6 +105,12 @@ router.get('/batches/:id/release-check', withData((data, req) => {
   if (!batch) throw new AppError(404, 'BATCH_NOT_FOUND', '这个批次不存在');
   return coldlib.releaseCheck(data, batch);
 }));
+router.get('/batches/:id/forecast', withData((data, req) => {
+  const batch = data.batches.find((b) => b.id === req.params.id);
+  if (!batch) throw new AppError(404, 'BATCH_NOT_FOUND', '这个批次不存在');
+  return coldlib.forecastBatch(data, batch);
+}));
+router.get('/forecast', withData((data) => coldlib.forecastOpenBatches(data)));
 router.post('/batches/:id/decision', withData((data, req) => ({ __save: true, __body: res.decide(data, req.params.id, req.body || {}) })));
 
 router.get('/records', withData((data, req) => res.listRecords(data, req.query)));
